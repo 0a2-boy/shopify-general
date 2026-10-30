@@ -1,0 +1,36 @@
+{%- comment -%}
+  Fixed set of payment icons, same order in footer and cart:
+  Amex, Apple Pay, Google Pay, Maestro, Mastercard, Shop Pay, Visa.
+
+  Usage: {% render 'payment-icons-custom' %}
+{%- endcomment -%}
+
+{%- assign payment_icons = 'american_express,apple_pay,google_pay,maestro,master,shopify_pay,visa' | split: ',' -%}
+
+<ul class="payment-icons-custom" role="list" aria-label="{{ 'sections.footer.payment' | t | default: 'Payment methods' }}">
+  {%- for type in payment_icons -%}
+    <li class="payment-icons-custom__item">
+      {{ type | payment_type_svg_tag: class: 'payment-icons-custom__icon' }}
+    </li>
+  {%- endfor -%}
+</ul>
+
+<style>
+  .payment-icons-custom {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.5rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .payment-icons-custom__item {
+    display: flex;
+    margin: 0;
+  }
+  .payment-icons-custom__icon {
+    width: 3.8rem;
+    height: 2.4rem;
+  }
+</style>
