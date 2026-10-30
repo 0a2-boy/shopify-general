@@ -1,18 +1,25 @@
 {%- comment -%}
-  Fixed set of payment icons, same order and size as the footer:
+  Fixed set of payment icons, same as the footer and the Essential Cart Drawer:
   Amex, Apple Pay, Google Pay, Maestro, Mastercard, Shop Pay, Visa.
+  The SVGs live in Settings > Files as fennholt-payment-<name>.svg.
 
   Usage: {% render 'payment-icons-custom' %}
 {%- endcomment -%}
 
-{%- assign payment_types = 'american_express,apple_pay,google_pay,maestro,master,shopify_pay,visa' | split: ',' -%}
+{%- assign payment_icons = 'american-express:American Express,apple-pay:Apple Pay,google-pay:Google Pay,maestro:Maestro,mastercard:Mastercard,shop-pay:Shop Pay,visa:Visa' | split: ',' -%}
 
 <div class="payment-icons-custom">
-  <span class="visually-hidden">{{ 'blocks.payment_methods' | t }}</span>
-  <ul class="payment-icons-custom__list" role="list">
-    {%- for type in payment_types -%}
+  <ul class="payment-icons-custom__list" role="list" aria-label="{{ 'blocks.payment_methods' | t }}">
+    {%- for icon in payment_icons -%}
+      {%- assign icon_parts = icon | split: ':' -%}
       <li class="payment-icons-custom__item">
-        {{ type | payment_type_svg_tag: class: 'icon icon--full-color' }}
+        <img
+          src="{{ 'fennholt-payment-' | append: icon_parts[0] | append: '.svg' | file_url }}"
+          alt="{{ icon_parts[1] }}"
+          width="35"
+          height="24"
+          loading="lazy"
+        >
       </li>
     {%- endfor -%}
   </ul>
@@ -28,7 +35,7 @@
     align-items: center;
     justify-content: center;
     flex-wrap: wrap;
-    gap: 10px;
+    gap: 8px;
     margin: 0;
     padding: 0;
     list-style: none;
@@ -39,9 +46,9 @@
     align-items: center;
   }
 
-  .payment-icons-custom__item svg {
+  .payment-icons-custom__item img {
     display: block;
-    width: 38px;
+    width: auto;
     height: 24px;
   }
 {% endstylesheet %}
