@@ -1,36 +1,47 @@
 {%- comment -%}
-  Fixed set of payment icons, same order in footer and cart:
+  Fixed set of payment icons, same order and size as the footer:
   Amex, Apple Pay, Google Pay, Maestro, Mastercard, Shop Pay, Visa.
 
   Usage: {% render 'payment-icons-custom' %}
 {%- endcomment -%}
 
-{%- assign payment_icons = 'american_express,apple_pay,google_pay,maestro,master,shopify_pay,visa' | split: ',' -%}
+{%- assign payment_types = 'american_express,apple_pay,google_pay,maestro,master,shopify_pay,visa' | split: ',' -%}
 
-<ul class="payment-icons-custom" role="list" aria-label="{{ 'sections.footer.payment' | t | default: 'Payment methods' }}">
-  {%- for type in payment_icons -%}
-    <li class="payment-icons-custom__item">
-      {{ type | payment_type_svg_tag: class: 'payment-icons-custom__icon' }}
-    </li>
-  {%- endfor -%}
-</ul>
+<div class="payment-icons-custom">
+  <span class="visually-hidden">{{ 'blocks.payment_methods' | t }}</span>
+  <ul class="payment-icons-custom__list" role="list">
+    {%- for type in payment_types -%}
+      <li class="payment-icons-custom__item">
+        {{ type | payment_type_svg_tag: class: 'icon icon--full-color' }}
+      </li>
+    {%- endfor -%}
+  </ul>
+</div>
 
-<style>
+{% stylesheet %}
   .payment-icons-custom {
+    width: 100%;
+  }
+
+  .payment-icons-custom__list {
     display: flex;
-    flex-wrap: wrap;
+    align-items: center;
     justify-content: center;
-    gap: 0.5rem;
+    flex-wrap: wrap;
+    gap: 10px;
     margin: 0;
     padding: 0;
     list-style: none;
   }
+
   .payment-icons-custom__item {
     display: flex;
-    margin: 0;
+    align-items: center;
   }
-  .payment-icons-custom__icon {
-    width: 3.8rem;
-    height: 2.4rem;
+
+  .payment-icons-custom__item svg {
+    display: block;
+    width: 38px;
+    height: 24px;
   }
-</style>
+{% endstylesheet %}
