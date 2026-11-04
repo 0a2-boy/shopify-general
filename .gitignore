@@ -1,0 +1,6 @@
+# Secrets
+.env
+# Store data / generated sheets (regenerate with the scripts)
+/input/
+/output/
+__pycache__/
