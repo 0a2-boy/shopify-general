@@ -442,8 +442,14 @@ MATERIALS = [
     (r"\bjute\b", "Jute", False),
     (r"\bseagrass\b", "Seagrass", False),
     (r"\b(?:faux |pu |vegan )?leather\b", "Leather/PU", False),
-    (r"\bplastic\b|\bpolypropylene\b|\bpvc\b|\babs\b", "Plastic", False),
+    (r"\bplastic\b|\bpolypropylene\b|\bpp\b|\bpvc\b|\babs\b", "Plastic", False),
     (r"\b(?:poly)?resin\b", "Resin", False),
+    (r"\beva\b", "EVA foam", False),
+    (r"\b(?:memory )?foam\b", "Foam", False),
+    (r"\bmicrofib(?:re|er)\b", "Microfibre", False),
+    (r"\bnylon\b", "Nylon", False),
+    (r"\brubber\b", "Rubber", False),
+    (r"\bpolycarbonate\b|\bpc plastic\b", "Polycarbonate", False),
     (r"\bacrylic\b", "Acrylic", False),
     (r"\bsilicone\b", "Silicone", False),
 ]
@@ -461,6 +467,8 @@ def find_materials(text: str) -> list[str]:
     for rx, name, _ in MATERIALS:
         if rx.search(text) and name not in found:
             found.append(name)
+    if "EVA foam" in found and "Foam" in found:
+        found.remove("Foam")
     # "Wood" is redundant when a specific wood was named
     if "Wood" in found and len([f for f in found if f in WOOD_NAMES]) > 1:
         found.remove("Wood")
@@ -485,29 +493,71 @@ def detect_materials(p: Product, text: str) -> tuple[list[str], str]:
     mats = find_materials(" ; ".join(p.tags))
     if mats:
         return mats, "tags"
-    mats = find_materials(p.title + " \n " + text)
+    mats = find_materials(strip_surface_mentions(p.title + " \n " + text))
     if mats:
         return mats, "title/description keywords"
     return [], ""
 
 
-def wood_evidence(p: Product, text: str, materials: list[str]) -> list[str]:
-    hay = "\n".join([p.title, text, " ; ".join(p.tags), " ; ".join(v for _, v in p.metafields.values())])
-    hits = []
+# "grips tiles, timber and other hard floors" - describes where it is used, not what it is made of
+SURFACE_CONTEXT_RE = re.compile(r"(?i)\bfloor|\btiles?\b|\blaminate\b|\bbrick\b|\bdeck(?:ing)?\b")
+# "wood-look", "wood-grain finish", "Colour options: ... Wood finish" - appearance only
+LOOK_AFTER_RE = re.compile(r"(?i)^[\s-]*(?:look|grain|effect|finish|tones?|colou?r|print|pattern|style)\b")
+COLOUR_LIST_RE = re.compile(r"(?i)colou?r(?:\s+options?)?\s*:[^\n]*$")
+
+
+def strip_surface_mentions(text: str) -> str:
+    """Remove wood words that describe the surface a product is used on ("tiles and timber floors")."""
+    for rx, _, wood in MATERIALS:
+        if not wood:
+            continue
+        def _drop(m, _t=text):
+            line_start = _t.rfind("\n", 0, m.start()) + 1
+            before = _t[max(line_start, m.start() - 15): m.start()]
+            after = _t[m.end(): m.end() + 30]
+            return " " if SURFACE_CONTEXT_RE.search(before + " " + after) else m.group(0)
+        text = rx.sub(_drop, text)
+    return text
+
+
+def wood_evidence(p: Product, text: str, materials: list[str]) -> tuple[list[str], list[str]]:
+    """Return (strong, weak) wood mentions.
+
+    strong = the product appears to contain wood; weak = only a wood look/finish/colour is mentioned.
+    Mentions of the surface the product sits on (timber floors, etc.) are ignored.
+    """
+    metafield_text = " ; ".join(v for k, (_, v) in p.metafields.items() if not k.startswith("global."))
+    hay = "\n".join([p.title, text, " ; ".join(p.tags), metafield_text])
+    strong, weak = [], []
     for rx, name, wood in MATERIALS:
-        if wood:
-            m = rx.search(hay)
-            if m and m.group(0).lower() not in hits:
-                hits.append(m.group(0).lower())
-    if not hits:
-        hits = [m.lower() for m in materials if m in WOOD_NAMES]
-    return hits
+        if not wood:
+            continue
+        for m in rx.finditer(hay):
+            word = m.group(0).lower()
+            line_start = hay.rfind("\n", 0, m.start()) + 1
+            before = hay[max(line_start, m.start() - 30): m.start()]
+            after = hay[m.end(): m.end() + 30]
+            if SURFACE_CONTEXT_RE.search(before[-15:] + " " + after):
+                continue
+            if LOOK_AFTER_RE.match(after) or COLOUR_LIST_RE.search(hay[line_start: m.start()]):
+                if word not in weak:
+                    weak.append(word)
+                continue
+            if word not in strong:
+                strong.append(word)
+    if not strong:
+        for mat in materials:
+            if mat in WOOD_NAMES and mat.lower() not in strong:
+                strong.append(mat.lower())
+    weak = [w for w in weak if w not in strong]
+    return strong, weak
 
 
 # --------------------------------------------------------------------------- #
 # Dimension parsing
 # --------------------------------------------------------------------------- #
 NUM = r"\d+(?:\.\d+)?"
+QUAL = r"(?:(?:approx(?:imately)?\.?|about|around|ca\.|~|up to|max\.?)[ \t]*)?"
 UNIT = (
     r"(?:mm|millimet(?:er|re)s?|cm|centimet(?:er|re)s?|met(?:er|re)s?|m(?![a-z])"
     r"|inch(?:es)?|in(?![a-z])|''|\"|ft|feet|foot)"
@@ -530,15 +580,19 @@ GROUP_RE = re.compile(
 )
 SINGLE_RE = re.compile(
     rf"(?P<lab>\b(?:Length|Width|Depth|Height|Diameter|Dia|Thickness)\b|Ø|\b[LWDH](?=\s*[:=]?\s*\d))"
-    rf"[ \t]*(?:\((?:cm|mm|in|inches)\))?[ \t]*[:=\-]?[ \t]*(?P<num>{NUM})[ \t]*(?P<unit>{UNIT})",
+    rf"[ \t]*(?:\((?:cm|mm|in|inches)\))?[ \t]*[:=\-]?[ \t]*{QUAL}(?P<num>{NUM})[ \t]*(?P<unit>{UNIT})",
     re.I,
 )
 SINGLE_SUFFIX_RE = re.compile(
-    rf"(?<![\w.])(?P<num>{NUM})[ \t]*(?P<unit>{UNIT})[ \t]*(?P<lab>high|tall|wide|deep|long|in diameter|diameter)\b(?![ \t]*:)",
+    rf"(?<![\w.])(?P<num>{NUM})[ \t]*(?P<unit>{UNIT})[ \t]*(?P<lab>high|tall|wide|deep|long|across|in diameter|diameter)\b(?![ \t]*:)",
     re.I,
 )
 SIZE_FIELD_RE = re.compile(
-    rf"(?i)\b(?:dimensions?|size|measurements?|overall)\b[^:\n]{{0,25}}:\s*(?P<num>{NUM})\s*(?P<unit>{UNIT})(?!\s*[xX*]\s*\d)"
+    rf"(?i)\b(?:dimensions?|size|measurements?|overall)\b[^:\n]{{0,25}}:\s*{QUAL}(?P<num>{NUM})\s*(?P<unit>{UNIT})(?!\s*[xX*]\s*\d)"
+)
+ORDER_HINT_RE = re.compile(
+    r"[ \t]*\((\s*(?:length|width|depth|height|diameter|[LWDH])(?:\s*[xX*]\s*(?:length|width|depth|height|diameter|[LWDH])){1,2}\s*)\)",
+    re.I,
 )
 UNIT_CONTEXT_RE = re.compile(r"(?i)\((cm|mm|inch(?:es)?|in)\)|\bin (cm|mm|inches)\b|\b(cm|mm)\s*:")
 DIM_LABEL_CONTEXT_RE = re.compile(r"(?i)dimension|size|measure")
@@ -566,7 +620,7 @@ def axis_of(label: str | None) -> str | None:
     if not label:
         return None
     l = label.strip("().: ").lower()
-    if l in ("ø", "dia", "dia.", "diameter", "in diameter"):
+    if l in ("ø", "dia", "dia.", "diameter", "in diameter", "across"):
         return "DIA"
     return {
         "l": "L", "length": "L", "long": "L",
@@ -653,6 +707,13 @@ def parse_dimensions(text: str) -> list[DimSet]:
             default, assumed = _context_unit(text, m.start())
             if default is None:
                 continue  # "2 x 3" with no unit anywhere -> not a dimension
+        # an order hint right after the numbers: "86.5 x 23.8 cm (height x width)", "(W x D x H)"
+        hint = ORDER_HINT_RE.match(text, m.end())
+        if hint and all(c["axis"] is None for c in comps):
+            axes = [axis_of(a.strip()) for a in re.split(r"\s*[xX*]\s*", hint.group(1))]
+            if len(axes) == len(comps) and all(axes) and len(set(axes)) == len(axes):
+                for c, a in zip(comps, axes):
+                    c["axis"] = a
         values = {}
         n_unl = 0
         for c in comps:
@@ -902,9 +963,11 @@ def build_rows(products: list[Product], domain: str) -> list[dict]:
     for p in products:
         text = html_to_text(p.body_html)
         materials, mat_src = detect_materials(p, text)
-        wood_hits = wood_evidence(p, text, materials)
+        wood_hits, wood_weak = wood_evidence(p, text, materials)
         if wood_hits:
             contains_wood = "Yes"
+        elif wood_weak:
+            contains_wood = "Unclear"  # only a wood look/finish/colour is mentioned
         elif materials:
             contains_wood = "No"
         else:
@@ -957,7 +1020,8 @@ def build_rows(products: list[Product], domain: str) -> list[dict]:
                     "collections": ", ".join(p.collections),
                     "title": p.title,
                     "vendor": p.vendor,
-                    "wood_evidence": ", ".join(wood_hits),
+                    "wood_evidence": ", ".join(wood_hits)
+                    + (("; look/finish only: " if wood_hits else "look/finish only: ") + ", ".join(wood_weak) if wood_weak else ""),
                     "material_source": mat_src,
                     "dimensions_source": dims_src,
                     "weight_source": weight_src,
